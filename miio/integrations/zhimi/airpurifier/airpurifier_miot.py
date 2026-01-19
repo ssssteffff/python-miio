@@ -105,6 +105,43 @@ _MAPPING_VA2 = {
     "led_brightness": {"siid": 13, "piid": 2},
 }
 
+# https://miot-spec.org/miot-spec-v2/instance?type=urn:miot-spec-v2:device:air-purifier:0000A007:xiaomi-mb5:1:0000D050
+_MAPPING_XIAOMI_MB5 = {
+    # Air Purifier
+    "power": {"siid": 2, "piid": 1},
+    "mode": {"siid": 2, "piid": 4},
+    "fan_level": {"siid": 2, "piid": 5},
+    "anion": {"siid": 2, "piid": 6},
+    "uv": {"siid": 2, "piid": 7},
+    # Environment
+    "humidity": {"siid": 3, "piid": 1},
+    "air_quality": {"siid": 3, "piid": 3},
+    "aqi": {"siid": 3, "piid": 4},
+    "pm10_density": {"siid": 3, "piid": 5},
+    "temperature": {"siid": 3, "piid": 7},
+    "pm1": {"siid": 3, "piid": 9},
+    # Filter
+    "filter_life_remaining": {"siid": 4, "piid": 1},
+    "filter_left_time": {"siid": 4, "piid": 2},
+    "filter_hours_used": {"siid": 4, "piid": 3},
+    # Alarm
+    "buzzer": {"siid": 6, "piid": 1},
+    # Screen
+    "display": {"siid": 7, "piid": 1},
+    "led_brightness": {"siid": 7, "piid": 2},
+    # Physical Control Locked
+    "child_lock": {"siid": 8, "piid": 1},
+    # Air Purifier Favorite
+    "favorite_level": {"siid": 9, "piid": 1},
+    # Filter Tag
+    "filter_rfid_tag": {"siid": 11, "piid": 1},
+    "filter_rfid_product_id": {"siid": 11, "piid": 3},
+    # AQI
+    "aqi_realtime_update_duration": {"siid": 12, "piid": 1},
+    # Custom Service
+    "motor_speed": {"siid": 13, "piid": 3},
+}
+
 # https://miot-spec.org/miot-spec-v2/instance?type=urn:miot-spec-v2:device:air-purifier:0000A007:zhimi-vb4:1
 _MAPPING_VB4 = {
     # Air Purifier
@@ -276,6 +313,7 @@ _MAPPINGS = {
     "zhimi.airp.mb5": _MAPPING_VA2,  # airpurifier 4
     "zhimi.airp.mb5a": _MAPPING_VA2,  # airpurifier 4
     "zhimi.airp.va2": _MAPPING_VA2,  # airpurifier 4 pro
+    "xiaomi.airp.mb5": _MAPPING_XIAOMI_MB5,  # airpurifier 6
     "zhimi.airp.vb4": _MAPPING_VB4,  # airpurifier 4 pro
     "zhimi.airpurifier.rma1": _MAPPING_RMA1,  # airpurifier 4 lite
     "zhimi.airpurifier.rma2": _MAPPING_RMA2,  # airpurifier 4 lite
@@ -417,6 +455,11 @@ class AirPurifierMiotStatus(DeviceStatus):
         return self.data.get("humidity")
 
     @property
+    def air_quality(self) -> Optional[int]:
+        """Current air quality value."""
+        return self.data.get("air_quality")
+
+    @property
     def tvoc(self) -> Optional[int]:
         """Current TVOC."""
         return self.data.get("tvoc")
@@ -435,6 +478,12 @@ class AirPurifierMiotStatus(DeviceStatus):
         return round(pm10_density, 1) if pm10_density is not None else None
 
     @property
+    def pm1(self) -> Optional[float]:
+        """Current PM1 density, if available."""
+        pm1 = self.data.get("pm1")
+        return round(pm1, 1) if pm1 is not None else None
+
+    @property
     def fan_level(self) -> Optional[int]:
         """Current fan level."""
         return self.data.get("fan_level")
@@ -443,6 +492,12 @@ class AirPurifierMiotStatus(DeviceStatus):
     def led(self) -> Optional[bool]:
         """Return True if LED is on."""
         return self.data.get("led")
+
+    @property
+    @setting("Display", setter_name="set_display")
+    def display(self) -> Optional[bool]:
+        """Return True if display is on."""
+        return self.data.get("display")
 
     @property
     @setting("LED Brightness", setter_name="set_led_brightness", range=(0, 2))
@@ -510,6 +565,12 @@ class AirPurifierMiotStatus(DeviceStatus):
         return self.data.get("anion")
 
     @property
+    @setting("UV", setter_name="set_uv")
+    def uv(self) -> Optional[bool]:
+        """Return whether UV is on."""
+        return self.data.get("uv")
+
+    @property
     @sensor("Filter Left Time", unit="days")
     def filter_left_time(self) -> Optional[int]:
         """How many days can the filter still be used."""
@@ -531,15 +592,19 @@ class AirPurifierMiot(MiotDevice):
             "",
             "Power: {result.power}\n"
             "Anion: {result.anion}\n"
+            "UV: {result.uv}\n"
             "AQI: {result.aqi} μg/m³\n"
+            "Air quality: {result.air_quality}\n"
             "TVOC: {result.tvoc}\n"
             "Average AQI: {result.average_aqi} μg/m³\n"
             "Humidity: {result.humidity} %\n"
             "Temperature: {result.temperature} °C\n"
             "PM10 Density: {result.pm10_density} μg/m³\n"
+            "PM1 Density: {result.pm1} μg/m³\n"
             "Fan Level: {result.fan_level}\n"
             "Mode: {result.mode}\n"
             "LED: {result.led}\n"
+            "Display: {result.display}\n"
             "LED brightness: {result.led_brightness}\n"
             "LED brightness level: {result.led_brightness_level}\n"
             "Gestures: {result.gestures}\n"
@@ -624,6 +689,20 @@ class AirPurifierMiot(MiotDevice):
                 "Unsupported anion for model '%s'" % self.model
             )
         return self.set_property("anion", anion)
+
+    @command(
+        click.argument("uv", type=bool),
+        default_output=format_output(
+            lambda uv: "Turning on UV" if uv else "Turning off UV"
+        ),
+    )
+    def set_uv(self, uv: bool):
+        """Set UV on/off."""
+        if "uv" not in self._get_mapping():
+            raise UnsupportedFeatureException(
+                "Unsupported UV for model '%s'" % self.model
+            )
+        return self.set_property("uv", uv)
 
     @command(
         click.argument("buzzer", type=bool),
@@ -735,6 +814,20 @@ class AirPurifierMiot(MiotDevice):
         if self.model in REVERSED_LED_BRIGHTNESS and value is not None:
             value = 2 - value
         return self.set_property("led_brightness", value)
+
+    @command(
+        click.argument("display", type=bool),
+        default_output=format_output(
+            lambda display: "Turning on display" if display else "Turning off display"
+        ),
+    )
+    def set_display(self, display: bool):
+        """Turn display on/off."""
+        if "display" not in self._get_mapping():
+            raise UnsupportedFeatureException(
+                "Unsupported display for model '%s'" % self.model
+            )
+        return self.set_property("display", display)
 
     @command(
         click.argument("led", type=bool),
