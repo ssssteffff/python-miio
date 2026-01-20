@@ -325,6 +325,7 @@ REVERSED_LED_BRIGHTNESS = [
     "zhimi.airp.va2",
     "zhimi.airp.mb5",
     "zhimi.airp.mb5a",
+    "xiaomi.airp.mb5",
     "zhimi.airp.vb4",
     "zhimi.airp.rmb1",
 ]
